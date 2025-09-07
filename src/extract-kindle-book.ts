@@ -55,7 +55,7 @@ async function main() {
     // '/run/current-system/sw/bin/chromium'
     const executableNameList = [
       // TODO prefer CHROME_EXECUTABLE_PATH from env
-      // env.CHROME_EXECUTABLE_PATH,
+      process.env.CHROME_EXECUTABLE_PATH,
       'Google Chrome',
       'chromium',
       'chromium.exe',
@@ -603,7 +603,7 @@ async function main() {
       console.log(`FIXME found duplicate imageId ${imageId}`)
       pageOfDuplicateImageId = pageByImageId[imageId]
     }
-    pageByImageId[imageId] = pageNum
+    pageByImageId[imageId] = pageNav.page
 
     // TODO assert(pageNav.page >= lastPage)
 
@@ -753,7 +753,7 @@ async function main() {
             // make sure we are on this page before clicking the next page button
             // otherwise clicking the next page button can skip pages
             console.log(`before clicking next page button, seeking to page ${page}`)
-            await goToPage(pageNum)
+            await goToPage(pageNav.page)
             // await delay(99999999)
           }
 
