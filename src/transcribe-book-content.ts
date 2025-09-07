@@ -16,7 +16,7 @@ async function main() {
   assert(asin, 'ASIN is required')
 
   const outDir = path.join('out', asin)
-  const pageScreenshotsDir = path.join(outDir, 'pages')
+  const pageScreenshotsDir = path.join(outDir, 'pages', 'white')
   const pageScreenshots = await globby(`${pageScreenshotsDir}/*.png`)
   assert(pageScreenshots.length, 'no page screenshots found')
 
@@ -73,7 +73,7 @@ async function main() {
       async (screenshot) => {
         const screenshotBuffer = await fs.readFile(screenshot)
         const screenshotBase64 = `data:image/png;base64,${screenshotBuffer.toString('base64')}`
-        const metadataMatch = screenshot.match(/0*(\d+)-\0*(\d+).png/)
+        const metadataMatch = screenshot.match(/0*(\d+)-\0*(\d+)-([-\w]+).png/)
         assert(
           metadataMatch?.[1] && metadataMatch?.[2],
           `invalid screenshot filename: ${screenshot}`
@@ -87,7 +87,7 @@ async function main() {
 
         let result = null
 
-        const indexPageStr = screenshot.match(/(\d+-\d+).png/)[1]
+        const indexPageStr = screenshot.match(/(\d+-\d+)-([-\w]+).png/)[1]
         const transcribeResultCachePath = path.join(outDir, 'text', `${indexPageStr}.json`)
         await fs.mkdir(path.join(outDir, 'text'), { recursive: true })
 
