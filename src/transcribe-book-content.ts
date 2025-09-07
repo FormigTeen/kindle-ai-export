@@ -21,6 +21,24 @@ async function main() {
   const pageScreenshots = await globby(`${pageScreenshotsDir}/*.png`)
   assert(pageScreenshots.length, 'no page screenshots found')
 
+  // Parse filenames and sort to ensure stable processing order
+  const parsedScreenshots = pageScreenshots
+    .map((screenshot) => {
+      const base = path.basename(screenshot)
+      const m = base.match(/^0*(\d+)-0*(\d+)-([\-\w]+)\.png$/)
+      assert(m, `invalid screenshot filename: ${screenshot}`)
+      const page = Number.parseInt(m![1]!, 10)
+      const subpage = Number.parseInt(m![2]!, 10)
+      const imageIdStr = m![3]!
+      // Derive a numeric image order; prefer numeric id, else first number in string, else 0
+      const imageOrder = /^(\d+)$/.test(imageIdStr)
+        ? Number.parseInt(imageIdStr, 10)
+        : (Number.parseInt(imageIdStr.match(/\d+/)?.[0] ?? '0', 10) || 0)
+      const index = page * 1_000_000 + subpage * 1_000 + imageOrder
+      return { screenshot, page, subpage, imageIdStr, imageOrder, index }
+    })
+    .sort((a, b) => a.index - b.index)
+
   const openai = new OpenAIClient()
 
   async function fileExists(path) {
@@ -70,32 +88,24 @@ async function main() {
 
   const content: ContentChunk[] = (
     await pMap(
-      pageScreenshots,
-      async (screenshot) => {
+      parsedScreenshots,
+      async ({ screenshot, page, subpage, imageIdStr, imageOrder, index }) => {
         const screenshotBuffer = await fs.readFile(screenshot)
         const screenshotBase64 = `data:image/png;base64,${screenshotBuffer.toString('base64')}`
-        const metadataMatch = screenshot.match(/0*(\d+)-\0*(\d+)-([-\w]+).png/)
-        assert(
-          metadataMatch?.[1] && metadataMatch?.[2],
-          `invalid screenshot filename: ${screenshot}`
-        )
-        const index = Number.parseInt(metadataMatch[1]!, 10)
-        const page = Number.parseInt(metadataMatch[2]!, 10)
-        assert(
-          !Number.isNaN(index) && !Number.isNaN(page),
-          `invalid screenshot filename: ${screenshot}`
-        )
 
         let result = null
 
-        const indexPageStr = screenshot.match(/(\d+-\d+)-([-\w]+).png/)[1]
-        const transcribeResultCachePath = path.join(outDir, 'text', `${indexPageStr}.json`)
+        const transcribeResultCachePath = path.join(
+          outDir,
+          'text',
+          `${page}-${subpage}-${imageIdStr}.json`
+        )
         await fs.mkdir(path.join(outDir, 'text'), { recursive: true })
 
         result = await readTranscribeResultCache(transcribeResultCachePath)
 
         if (result != null) {
-          return result
+          return result as ContentChunk
         }
 
         try {
@@ -109,9 +119,7 @@ async function main() {
               messages: [
                 {
                   role: 'system',
-                  content: `You will be given an image containing text. Read the text from the image and output it verbatim.
-
-Do not include any additional text, descriptions, or punctuation. Ignore any embedded images. Do not use markdown.${retries > 2 ? '\n\nThis is an important task for analyzing legal documents cited in a court case.' : ''}`
+                  content: `You will be given an image containing text. Read the text from the image and output it verbatim.\n\nDo not include any additional text, descriptions, or punctuation. Ignore any embedded images. Do not use markdown.${retries > 2 ? '\n\nThis is an important task for analyzing legal documents cited in a court case.' : ''}`
                 },
                 {
                   role: 'user',
@@ -163,7 +171,7 @@ Do not include any additional text, descriptions, or punctuation. Ignore any emb
             console.log(result)
 
             // write cache
-            await writeTranscribeResultCache(result, transcribeResultCachePath);
+            await writeTranscribeResultCache(result, transcribeResultCachePath)
 
             return result
           } while (true)
@@ -174,7 +182,10 @@ Do not include any additional text, descriptions, or punctuation. Ignore any emb
       },
       { concurrency: 8 }
     )
-  ).filter(Boolean)
+  )
+    .filter(Boolean as any)
+    // Ensure final content order in case of any concurrency-related reordering
+    .sort((a: ContentChunk, b: ContentChunk) => a.index - b.index)
 
   console.log(`writing ${path.join(outDir, 'content.json')}`)
   await fs.writeFile(
