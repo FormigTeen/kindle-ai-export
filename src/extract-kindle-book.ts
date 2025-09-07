@@ -53,16 +53,16 @@ async function main() {
     // '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
     // '/usr/bin/chromium'
     // '/run/current-system/sw/bin/chromium'
-    const executableNameList = [
+    const executableNameList = ([
       // TODO prefer CHROME_EXECUTABLE_PATH from env
-      process.env.CHROME_EXECUTABLE_PATH,
+      getEnv('CHROME_EXECUTABLE_PATH'),
       'Google Chrome',
       'chromium',
       'chromium.exe',
       'chrome',
       'chrome.exe',
       // TODO more
-    ]
+    ]).filter(Boolean) as string[]
     let executablePath = null
     for (const executableName of executableNameList) {
       if (!executableName) continue

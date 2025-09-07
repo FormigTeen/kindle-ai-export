@@ -13,6 +13,7 @@ import { assert, getEnv } from './utils'
 
 async function main() {
   const asin = getEnv('ASIN')
+  const model = getEnv('OPENAI_MODEL') ?? 'gpt-5-mini'
   assert(asin, 'ASIN is required')
 
   const outDir = path.join('out', asin)
@@ -103,7 +104,7 @@ async function main() {
 
           do {
             const res = await openai.createChatCompletion({
-              model: 'gpt-5-mini',
+              model,
               //temperature: retries < 2 ? 0 : 0.5,
               messages: [
                 {
