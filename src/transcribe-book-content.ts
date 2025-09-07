@@ -103,8 +103,8 @@ async function main() {
 
           do {
             const res = await openai.createChatCompletion({
-              model: 'gpt-4o',
-              temperature: retries < 2 ? 0 : 0.5,
+              model: 'gpt-5-mini',
+              //temperature: retries < 2 ? 0 : 0.5,
               messages: [
                 {
                   role: 'system',
