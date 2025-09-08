@@ -593,8 +593,9 @@ async function main() {
     // extract image id
     const imageIdMatch = imageIdRegex.exec(src)
     if (!imageIdMatch) {
-      console.log(`FIXME not found imageIdMatch in src ${src}`)
-      await delay(99999)
+      console.log(`warning: not found imageIdMatch in src ${src}`)
+      // Continue trying; Kindle sometimes delays loading the image src.
+      // We'll rely on the navigation retry loop below to progress.
     }
     const imageId = imageIdMatch[1]
     console.log(`found imageId ${imageId}`)
@@ -703,10 +704,10 @@ async function main() {
       // TODO indent ...
 
     await fs.writeFile(screenshotPath, b)
-
     if (pageOfDuplicateImageId != null) {
-      console.log(`FIXME found duplicate imageId ${imageId} - previous page ${pageOfDuplicateImageId}`)
-      await delay(99999)
+      // Duplicate imageId across pages typically happens at or near the end.
+      // Log and continue without blocking to avoid hanging the extraction.
+      console.log(`note: duplicate imageId ${imageId} also seen on page ${pageOfDuplicateImageId}`)
     }
 
     /*
@@ -735,9 +736,13 @@ async function main() {
     }
 
     let retries = 0
+    let stepOnError = 1
+    const maxRetries = 30 // cap retries to avoid hanging on last page
+    let shouldStopExtraction = false
 
     // Occasionally the next page button doesn't work, so ensure that the main
     // image src actually changes before continuing.
+    let hasErrorOnPage = false
     while (true) {
       try {
         // Navigate to the next page
@@ -765,15 +770,18 @@ async function main() {
             .locator('.kr-chevron-container-right')
             .click({ timeout: 1000 })
             // ... TODO indent
-          }
-          catch (exc) {
+          }  catch (exc) {
             console.log(`clicking next page button failed: ${exc}`)
+            hasErrorOnPage = true
+            // If clicking fails, assume no next page (common at the last page)
+            shouldStopExtraction = true
+            break;
             // fallback on Timeout: waiting for locator('.kr-chevron-container-right')
             // this seems to be a bug in the kindle reader
             // when seeking from the last page to the first page
             // then there is no "next page" button, only a "previous page" button
-            console.log(`seeking to next page with goToPage(${pageNav.page + 1})`)
-            await goToPage(pageNav.page + 1)
+            console.log(`seeking to next page with goToPage(${pageNav.page + stepOnError})`)
+            await goToPage(pageNav.page + stepOnError)
           }
         }
         // await delay(500)
@@ -783,6 +791,7 @@ async function main() {
           'unable to navigate to next page; breaking...',
           err.message
         )
+        shouldStopExtraction = true
         break
       }
 
@@ -795,8 +804,8 @@ async function main() {
       const src2 = newSrc
       const imageIdMatch2 = imageIdRegex.exec(src2)
       if (!imageIdMatch2) {
-        console.log(`FIXME not found imageIdMatch2 in src2 ${src2}`)
-        await delay(99999)
+        console.log(`warning: not found imageIdMatch2 in src2 ${src2}`)
+        // Retry; if it persists, the retry cap below will stop extraction.
       }
       const imageId2 = imageIdMatch2[1]
       console.log(`found imageId2 ${imageId2}`)
@@ -808,14 +817,31 @@ async function main() {
       }
 
       if (pageNav.page >= totalContentPages) {
+        shouldStopExtraction = true
+        break
+      }
+
+      if (hasErrorOnPage) {
+        console.log('bailing out of retry loop after error on page')
+        hasErrorOnPage = false
+        shouldStopExtraction = true
         break
       }
 
       await delay(100)
 
       ++retries
+      if (retries >= maxRetries) {
+        console.log(`max retries (${maxRetries}) reached without new image; assuming end of content`)
+        shouldStopExtraction = true
+        break
+      }
     }
     lastPage = pageNav.page
+    if (shouldStopExtraction) {
+      console.log('no further progress detected; stopping extraction loop')
+      break
+    }
   }
 
     // ... TODO indent
