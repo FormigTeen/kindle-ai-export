@@ -527,8 +527,17 @@ async function main() {
 
   const total = parsedToc.firstPageTocItem.total
   const pagePadding = `${total * 2}`.length
-  await page.locator(parsedToc.firstPageTocItem.locator._selector)!.scrollIntoViewIfNeeded()
-  await page.locator(parsedToc.firstPageTocItem.locator._selector)!.click()
+  // Navigate to the first content page. Prefer clicking the TOC item when we
+  // have a live locator; otherwise fall back to Go To Page using the page
+  // number from the cached TOC entry.
+  if ((parsedToc.firstPageTocItem as any)?.locator?.['_selector']) {
+    await page
+      .locator(parsedToc.firstPageTocItem.locator._selector)
+      .scrollIntoViewIfNeeded()
+    await page
+      .locator(parsedToc.firstPageTocItem.locator._selector)
+      .click()
+  }
 
   const totalContentPages = Math.min(
     parsedToc.afterLastPageTocItem?.page
@@ -543,10 +552,37 @@ async function main() {
 
   const pagesByPageColor = {}
 
+  // Helper to ensure we are actually on a numbered page (and not in front
+  // matter like roman-numeral Preface) before extraction begins.
+  async function ensureOnNumberedPage(targetPage?: number) {
+    // Try direct page navigation first if requested.
+    if (targetPage && Number.isFinite(targetPage)) {
+      await goToPage(targetPage)
+      await delay(500)
+    }
+
+    // If we're still on a non-numbered location, advance a few pages to reach
+    // the first numbered page.
+    let tries = 0
+    while (tries < 10) {
+      const nav = await getPageNav()
+      if (nav?.page !== undefined) return
+      // try advancing to next page
+      try {
+        await page.locator('.kr-chevron-container-right').click({ force: true })
+      } catch {}
+      await delay(300)
+      tries++
+    }
+  }
+
   for (const pageColor of ['white', 'black']) {
     console.log(`extracting screenshots of ${pageColor} pages ...`)
     await updateSettings({ pageColor: pageColor })
-    await goToPage(1)
+    // If we did not have a live TOC locator (e.g. cache), jump directly to the
+    // first numbered page; otherwise ensure we are on a numbered page.
+    const startPage = (parsedToc.firstPageTocItem.page ?? 1)
+    await ensureOnNumberedPage(startPage)
     await fs.mkdir(path.join(pageScreenshotsDir, pageColor), { recursive: true })
     // TODO indent ...
 
